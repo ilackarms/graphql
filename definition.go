@@ -370,8 +370,8 @@ type InterfacesThunk func() []*Interface
 
 type ObjectConfig struct {
 	Name        string      `json:"name"`
-	Interfaces  interface{} `json:"interfaces"`
-	Fields      interface{} `json:"fields"`
+	Interfaces  []*Interface `json:"interfaces"`
+	Fields      Fields `json:"fields"`
 	IsTypeOf    IsTypeOfFn  `json:"isTypeOf"`
 	Description string      `json:"description"`
 }
@@ -403,11 +403,8 @@ func (gt *Object) AddFieldConfig(fieldName string, fieldConfig *Field) {
 	if fieldName == "" || fieldConfig == nil {
 		return
 	}
-	switch gt.typeConfig.Fields.(type) {
-	case Fields:
-		gt.typeConfig.Fields.(Fields)[fieldName] = fieldConfig
-		gt.initialisedFields = false
-	}
+	gt.typeConfig.Fields[fieldName] = fieldConfig
+	gt.initialisedFields = false
 }
 func (gt *Object) Name() string {
 	return gt.PrivateName
@@ -423,15 +420,7 @@ func (gt *Object) Fields() FieldDefinitionMap {
 		return gt.fields
 	}
 
-	var configureFields Fields
-	switch gt.typeConfig.Fields.(type) {
-	case Fields:
-		configureFields = gt.typeConfig.Fields.(Fields)
-	case FieldsThunk:
-		configureFields = gt.typeConfig.Fields.(FieldsThunk)()
-	}
-
-	gt.fields, gt.err = defineFieldMap(gt, configureFields)
+	gt.fields, gt.err = defineFieldMap(gt, gt.typeConfig.Fields)
 	gt.initialisedFields = true
 	return gt.fields
 }
@@ -441,20 +430,7 @@ func (gt *Object) Interfaces() []*Interface {
 		return gt.interfaces
 	}
 
-	var configInterfaces []*Interface
-	switch gt.typeConfig.Interfaces.(type) {
-	case InterfacesThunk:
-		configInterfaces = gt.typeConfig.Interfaces.(InterfacesThunk)()
-	case []*Interface:
-		configInterfaces = gt.typeConfig.Interfaces.([]*Interface)
-	case nil:
-	default:
-		gt.err = fmt.Errorf("Unknown Object.Interfaces type: %T", gt.typeConfig.Interfaces)
-		gt.initialisedInterfaces = true
-		return nil
-	}
-
-	gt.interfaces, gt.err = defineInterfaces(gt, configInterfaces)
+	gt.interfaces, gt.err = defineInterfaces(gt, gt.typeConfig.Interfaces)
 	gt.initialisedInterfaces = true
 	return gt.interfaces
 }
@@ -1088,7 +1064,7 @@ type InputObjectFieldMap map[string]*InputObjectField
 type InputObjectConfigFieldMapThunk func() InputObjectConfigFieldMap
 type InputObjectConfig struct {
 	Name        string      `json:"name"`
-	Fields      interface{} `json:"fields"`
+	Fields      InputObjectFieldMap `json:"fields"`
 	Description string      `json:"description"`
 }
 
@@ -1106,16 +1082,7 @@ func NewInputObject(config InputObjectConfig) *InputObject {
 }
 
 func (gt *InputObject) defineFieldMap() InputObjectFieldMap {
-	var (
-		fieldMap InputObjectConfigFieldMap
-		err      error
-	)
-	switch gt.typeConfig.Fields.(type) {
-	case InputObjectConfigFieldMap:
-		fieldMap = gt.typeConfig.Fields.(InputObjectConfigFieldMap)
-	case InputObjectConfigFieldMapThunk:
-		fieldMap = gt.typeConfig.Fields.(InputObjectConfigFieldMapThunk)()
-	}
+	fieldMap := gt.typeConfig.Fields
 	resultFieldMap := InputObjectFieldMap{}
 
 	if gt.err = invariantf(
@@ -1129,19 +1096,19 @@ func (gt *InputObject) defineFieldMap() InputObjectFieldMap {
 		if fieldConfig == nil {
 			continue
 		}
-		if err = assertValidName(fieldName); err != nil {
+		if err := assertValidName(fieldName); err != nil {
 			continue
 		}
 		if gt.err = invariantf(
 			fieldConfig.Type != nil,
 			`%v.%v field type must be Input Type but got: %v.`, gt, fieldName, fieldConfig.Type,
-		); err != nil {
+		); gt.err != nil {
 			return resultFieldMap
 		}
 		field := &InputObjectField{}
 		field.PrivateName = fieldName
 		field.Type = fieldConfig.Type
-		field.PrivateDescription = fieldConfig.Description
+		field.PrivateDescription = fieldConfig.Description()
 		field.DefaultValue = fieldConfig.DefaultValue
 		resultFieldMap[fieldName] = field
 	}
