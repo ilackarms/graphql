@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/graphql-go/graphql"
+	"github.com/ilackarms/graphql"
 )
 
 func TestTypeSystem_Scalar_ParseValueOutputDateTime(t *testing.T) {
